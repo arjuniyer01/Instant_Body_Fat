@@ -1,0 +1,408 @@
+---
+title: "Thumb Rule for Body Fat"
+author: "Arjun Iyer"
+output: html_document
+---
+# Goal
+
+The goal of the project is to come up with a simple and accurate way of determining body fat percentage of males based on readily available clinical measurements.
+
+# Analyzing Raw Data
+
+```{r}
+BodyFat = read.csv("BodyFat.csv") #Read data into R
+dim(BodyFat) # Dimension of the data (number of rows, number of columns)
+```
+
+> General information
+
+The body fat dataset consists of 252 rows and 17 columns which includes the following variables:
+
+**IDNO**: ID number of individual
+
+**BODYFAT** : Percent body fat from Siri's (1956) equation  
+
+**DENSITY** : Density determined from underwater weighing  
+
+**AGE** : Age (years)
+
+**WEIGHT** : Weight (lbs)
+
+**HEIGHT** : Height (inches)
+
+**ADIPOSITY**: Adioposity (bmi)
+
+**NECK** : Neck circumference (cm)
+
+**CHEST**: Chest circumference (cm)
+
+**ABDOMEN** : Abdomen circumference (cm)
+
+**HIP** : Hip circumference (cm)
+
+**THIGH** : Thigh circumference (cm)
+
+**KNEE** : Knee circumference (cm)
+
+**ANKLE** : Ankle circumference (cm)
+
+**BICEPS** : Biceps (extended) circumference (cm)
+
+**FOREARM** : Forearm circumference (cm)
+
+**WRIST** : Wrist circumference (cm)
+
+>Siri's equation  
+
+$$Percentage of Body Fat = 495/D - 450$$ 
+
+where D = Body Density (gm/cm^3)
+
+>Underwater Weighing
+
+To obtain density we use 'Underwater Weighing'. The technique of underwater weighing "computes body volume as the difference between body weight measured in air and weight measured during water submersion.
+
+$$Body Density = WA/[(WA-WW)/c.f. - LV]$$
+
+where  (Katch and McArdle (1977), p. 115),
+
+WA = Weight in air (kg) 
+
+WW = Weight in water (kg) 
+
+c.f. = Water correction factor (=1 at 39.2 deg F as one-gram of water occupies exactly one cm^3 at this temperature, =.997 at 76-78 deg F) 
+
+LV = Residual Lung Volume (liters) 
+
+>Checking for zero values and null values
+
+Looking at all the given values, it is not humanly possible to have any of these values to be zero. The following block checks and removes any rows with zero values.
+
+```{r}
+any(BodyFat==0)
+BodyFat = BodyFat[apply(BodyFat, 1, function(row) all(row !=0 )),]
+any(BodyFat==0) #Checking for values equal to 0
+```
+
+Sometimes datasets have null values wherever the data is incomplete. The following code block checks for null values.
+
+```{r}
+is.null(BodyFat) #Checking for null values
+```
+
+Since there are no null values, no correction is necessary. 
+
+>General Analysis
+
+```{r}
+head(BodyFat) #Look at the first few data points
+summary(BodyFat)
+```
+
+>Recoding of variables
+
+Since no variables are String or character values there is no need to recode any columns.
+
+> Picking predictors
+
+Our outcome is body fat. This is calculated using density. From, https://www.cdc.gov/healthyweight/assessing/bmi/adult_bmi/index.html we know that BMI(in our dataset adiposity) is moderately correlated with body fat. Now, the BMI calculator at https://www.cdc.gov/healthyweight/assessing/bmi/adult_bmi/english_bmi_calculator/bmi_calculator.html calculates BMI using height and weight. Additionally, from https://pubmed.ncbi.nlm.nih.gov/10232643/ (Mott, J W et al. “Relation between body fat and age in 4 ethnic groups.” The American journal of clinical nutrition vol. 69,5 (1999): 1007-13. doi:10.1093/ajcn/69.5.1007) we know that age also has a significant effect on body fat.
+
+>US Navy method for calculating body fat %
+
+To verify the validity of values I shall use the US Navy method for calculating body fat (men). Additionally, the US Navy method also makes use of abdomen and neck circumference.
+
+$$Percentage body fat = 86.010 * log10(abdomen - neck) - 70.041 * log10(height) + 36.76$$
+
+So for our purpose it can be safely assumed that **DENSITY**, **ADIPOSITY**, **HEIGHT**, **WEIGHT**, **AGE**, **ABDOMEN**, and **NECK** are primary predictors for body fat. With this information let us move to the next step.
+
+# Visualizing Data
+
+>Histogram analysis
+
+First, let us plot a histogram of **BODYFAT** (the Outcome value) to check for extreme results
+
+```{r Body Fat Histogram}
+hist(BodyFat$BODYFAT,breaks=40,cex.lab=1.5,cex.main=1.5,
+     main="Histogram of Body Fat %",xlab="Body Fat %")
+```
+
+We notice a lone occurrence at > 40. Let us see it in the dataset. We sort the dataset by **BODYFAT** to get a measure of how far it deviates.
+
+```{r Head BodyFat}
+head(BodyFat[order(BodyFat$BODYFAT, decreasing = TRUE),])
+```
+The edge value is 45.1 which is high, however, the closest set of values is at ~36 which is not too far.So it shouldn't skew our calculation too much. Hence I believe there is no need to remove this point at the current stage.
+
+We should keep in mind that the outcome is often after operations with multiple variables due to which the error might be scaled down. Hence we now look at the primary predictor variables that we decided previously. These might often have very extreme values that yield normal looking results which is bad for our model.
+
+Since we need to arrive at a 'rule of thumb' to find body fat we shall eliminate **DENSITY** and **ADIPOSITY** from our regression model as they aren't easily calculable. However, because they are influential, any flawed data in these would decrease model accuracy. Hence we graph and find possible flawed data in these predictors too.
+
+
+```{r Predictor Histograms}
+par(mfrow=c(4,2)) 
+par(mgp=c(1.8,.5,0), mar=c(3,3,1,1)) #"Beautifies" plots when creating multiple figures
+hist(BodyFat$AGE,breaks=40,cex.lab=1.5,
+     main="Histogram of Age",xlab="Age (years)")
+hist(BodyFat$DENSITY,breaks=40,cex.lab=1.5, main="Histogram of Density",xlab="Density")
+hist(BodyFat$HEIGHT,breaks=40,cex.lab=1.5, main="Histogram of Height",xlab="Height (inches)", xlim = c(20,80))
+hist(BodyFat$ADIPOSITY,breaks=40,cex.lab=1.5,main="Histogram of Adiposity",xlab="Adiposity (bmi)", xlim = c(15,50))
+hist(BodyFat$WEIGHT,breaks=40,cex.lab=1.5, main="Histogram of Weight",xlab="Weight (lbs)", xlim = c(100,400))
+hist(BodyFat$ABDOMEN,breaks=40,cex.lab=1.5, main="Histogram of Abdomen Circumference",xlab="Abdomen Circumference (cm)", xlim = c(60,160))
+hist(BodyFat$NECK,breaks=40,cex.lab=1.5, main="Histogram of neck Circumference",xlab="Neck circumference (cm)", xlim = c(30,55))
+```
+
+> Observations and rectifications from Histogram analysis
+
+**AGE**
+
+We don't really see any very extreme points with Age hence I shall not look into it further.
+
+**DENSITY**
+
+We don't really see any very extreme points with Density hence I shall not look into it further.
+
+**HEIGHT**
+
+For height, we notice a lone occurrence at approx. 30. Let us see it in the dataset. We sort the dataset by **HEIGHT** accordingly to obtain the exact value.
+
+```{r BodyFat by Height}
+head(BodyFat[order(BodyFat$HEIGHT),], n=3)
+```
+
+ - Using the US Navy method for calculation, this person's body fat %  should be `r 86.010 * log((104.3-36.6)/2.54, base=10) - 70.041 * log(29.50, base=10) + 36.76`% but it is recorded as 31.7%.
+ 
+ - Even though this might be a legitimate observation, it would affect accuracy when creating a generalized formula for body fat % calculation.
+ 
+ - Hence I shall remove this row as it is in our best interest.
+
+**ADIPOSITY**, **WEIGHT**, **ABDOMEN** & **NECK**
+
+For adiposity, we notice a lone occurrence at approx. 48. Let us see it in the dataset. We sort the dataset by **ADIPOSITY** accordingly to obtain the exact value.
+
+```{r BodyFat by Adiposity}
+head(BodyFat[order(BodyFat$ADIPOSITY, decreasing = TRUE),], n=2)
+```
+ 
+For weight, we notice a lone occurrence at approx. 360. Let us see it in the dataset. We sort the dataset by **WEIGHT** accordingly to obtain the exact value.
+
+```{r BodyFat by Weight}
+head(BodyFat[order(BodyFat$WEIGHT, decreasing = TRUE),], n=3)
+```
+
+For abdomen circumference, we notice a lone occurrence at approx. 150 Let us see it in the dataset. We sort the dataset by **ABDOMEN** accordingly to obtain the exact value.
+
+```{r BodyFat by Abdomen}
+head(BodyFat[order(BodyFat$ABDOMEN, decreasing = TRUE),], n=3)
+```
+
+For neck circumference, we notice a lone occurrence at approx. 52 Let us see it in the dataset. We sort the dataset by **NECK** accordingly to obtain the exact value.
+
+```{r BodyFat by Neck}
+head(BodyFat[order(BodyFat$NECK, decreasing = TRUE),], n=3)
+```
+
+ - The extreme data-points for **ADIPOSITY**, **WEIGHT**, **ABDOMEN**, and **NECK** have the same **IDNO**.
+ 
+ - Using the US Navy method for calculation, for IDNO = 39, this person's body fat %  should be `r 86.010 * log((148.1-51.2)/2.54, base=10) - 70.041 * log(72.25, base=10) + 36.76`% but it is recorded as 33.8%. 
+ - As stated previously, even though this might be a legitimate observation, it would affect accuracy when creating a generalized formula for body fat % calculation.
+ 
+ - Hence I shall remove this row as it is in our best interest.
+ 
+ - Looking at the multiple occurrences (same **IDNO**), this could be a possible cascading error where one wrong value leads to other values being calculated wrongly.
+ 
+>Removal of rows
+
+The rows with ID number 39 and 42 are removed.
+
+```{r Remove Outliers}
+BodyFat = subset(BodyFat, BodyFat$IDNO!=39 & BodyFat$IDNO!=42)
+```
+
+Let's look at the histograms again before we move on:
+
+```{r Final Predictor Histograms}
+par(mfrow=c(4,2)) 
+par(mgp=c(1.8,.5,0), mar=c(3,3,1,1)) #"Beautifies" plots when creating multiple figures
+hist(BodyFat$AGE,breaks=40,cex.lab=1.5,
+     main="Histogram of Age",xlab="Age (years)")
+hist(BodyFat$DENSITY,breaks=40,cex.lab=1.5, main="Histogram of Density",xlab="Density")
+hist(BodyFat$HEIGHT,breaks=40,cex.lab=1.5, main="Histogram of Height",xlab="Height (inches)")
+hist(BodyFat$ADIPOSITY,breaks=40,cex.lab=1.5,main="Histogram of Adiposity",xlab="Adiposity (bmi)")
+hist(BodyFat$WEIGHT,breaks=40,cex.lab=1.5, main="Histogram of Weight",xlab="Weight (lbs)")
+hist(BodyFat$ABDOMEN,breaks=40,cex.lab=1.5, main="Histogram of Abdomen Circumference",xlab="Abdomen Circumference (cm)")
+hist(BodyFat$NECK,breaks=40,cex.lab=1.5, main="Histogram of Neck Circumference",xlab="Neck Circumference (cm)")
+```
+
+We can see now that our distributions look a lot better and we can safely move on to the next step.
+
+# Modeling and Analysis 
+
+As stated previously, since we need to arrive at a 'rule of thumb' to find body fat we shall eliminate **DENSITY** and **ADIPOSITY** from our regression model as they aren't easily calculable. Let us now run a multiple regression model to find the most influential predictors.
+
+```{r Model 1 Regression}
+model = lm(BODYFAT ~ AGE+WEIGHT+HEIGHT+NECK+ABDOMEN, data = BodyFat)
+summary(model)
+confint(model)
+```
+
+When we see the confidence interval for the coefficients, we see that 0 is in the 95% confidence interval for AGE, WEIGHT, HEIGHT. However, before I decide to remove any of these from my model I shall fit a linear regression for each variable as a predictor for body fat.
+
+```{r Predictor Regressions}
+m1 <- lm(BODYFAT ~ AGE, data = BodyFat)
+m2 <- lm(BODYFAT ~ WEIGHT, data = BodyFat)
+m3 <- lm(BODYFAT ~ HEIGHT, data = BodyFat)
+
+plot(BodyFat$AGE, BodyFat$BODYFAT , main = "Body Fat % as a Function of Age", xlab = "Body Fat %", ylab = "Age (years")
+abline(m1, col="red")
+plot(BodyFat$WEIGHT, BodyFat$BODYFAT, main = "Body Fat % as a Function of Weight", xlab = "Weight (lbs)", ylab="Body Fat %")
+abline(m2, col="blue")
+plot(BodyFat$HEIGHT, BodyFat$BODYFAT, main = "Body Fat % as a Function of Height", xlab = "Height (inches)", ylab = "Body Fat %")
+abline(m3, col="green")
+
+summary(m1)$r.squared
+summary(m2)$r.squared
+summary(m3)$r.squared
+```
+
+From the $R^2$ of the linear models above we can see that **WEIGHT** by itself explains about 37% of the variation in body fat %. This is quite significant and I would like to look into **WEIGHT** further. However, the **AGE** and **HEIGHT** with $R^2$ values of `r summary(m1)$r.squared` and `r summary(m3)$r.squared` respectively can be omitted.
+
+Let us now try different multiple regression models:
+
+```{r Model 2 Regression}
+modelv2 = lm(BODYFAT ~ WEIGHT+NECK+ABDOMEN, data = BodyFat)
+confint(modelv2)
+summary(modelv2)$r.squared
+summary(modelv2)$adj.r.squared
+```
+
+Since 0 is in the 95% confidence interval for the NECK intercept, let us try a model without NECK and see how it changes the $R^2$ value.
+
+```{r Model 3 Regression}
+modelv3 = lm(BODYFAT ~ WEIGHT+ABDOMEN, data = BodyFat)
+summary(modelv3)$r.squared
+summary(modelv3)$adj.r.squared
+```
+
+The change in $R^2$ is negligible even though we have omitted a predictor. Having less predictors makes it easy for us to arrive at a better rule of thumb.
+
+> Best model formula, Observations and prediction
+
+```{r}
+summary(modelv3)
+confint(modelv3)
+```
+
+
+$$BodyFat\%=(0.9001103)*Abdomencirc.-(0.1231357)*Weight-42.2895456$$
+
+**Observation 1:** Weight and Abdomen circumference explain about 71.8% of the variation in body fat % (based on $R^2$)
+
+**Observation 2:** Men lose on average 0.12314% body fat, as men's weight increases by 1 lb.
+
+**Observation 3:** Men gain on average 0.90011% body fat, as abdomen circumference increases by 1 cm.
+
+
+For example, for a person who has a weight of 155 pounds with an abdomen circumference of 100 cm, his predicted body fat % percentage would be around 28.63%. There is a 95% probability that his body fat will lie between 20.47% and 36.8%.This is demonstrated below.
+
+```{r}
+predict(modelv3,newdata=data.frame(WEIGHT=155,ABDOMEN=100),interval="predict") 
+
+modelv3$coefficients
+```
+
+
+# Step 4: Diagnostics
+
+After model fitting, it is good to diagnose the MLR assumptions with a scatter plots, residual plot and a QQ plot.
+
+Scatter plot of Variables: good for diagnosing multicolinearity
+
+Residual plot: good for diagnosing (i) linearity vioations, (ii) homoscedasticity violations, and (iii) detecting outliers in Y
+
+QQ plot: good for diagnosing violations to Normality
+
+```{r}
+par(mfrow = c(1,1))
+subset <- BodyFat[,c(2,5,10)]
+plot(subset)
+
+plot(predict(modelv3),resid(modelv2),pch=19,cex=1.2,cex.lab=1.5,cex.main=1.5,
+    xlab="Predicted Body Fat %", ylab="Standardized Residuals",main="Standardized Residual Plot")
+abline(a=0,b=0,col="black",lwd=3)
+
+qqnorm(rstandard(modelv2),pch=19,cex=1.2,cex.lab=1.5,cex.main=1.5,
+      main="Normal Q-Q Plot of the Residuals")
+abline(a=0,b=1,col="black",lwd=3)
+```
+
+ 1. We can see from the scatterplots of Body Fat % against weight and abdomen each show a relationship that appears linear, so therefore the predictors have relationships with each other, but we will chose to ignore this as this model still fit the data well, and our goal is just to make a rule of thumb. 
+
+ 2. Linearity seems reasonable because there are no obvious non-linear trends in the residual plot; the points look randomly scattered around the X axis.
+ 
+ 3. Homoscedasticity is plausible, but there is a slight > pattern in the residual plot when the predicted body fat is between 25% to 30%.
+ 
+ 4. Normality also looks reasonable because the points in the QQ plot hug the 45 degree line very closely. But, there may be possibly skinny tail issue.
+ 
+# Outliers in Y, Leverage and Influential Points
+ 
+For leverage points, we’ll use pii measures. For influential points, we will use both the Cook’s distance and the pii measures.
+
+```{r}
+pii = hatvalues(modelv2)
+cooki = cooks.distance(modelv2)
+
+par(mfrow = c(2,1))
+n = dim(BodyFat)[1]
+plot(1:n,pii,type="p",pch=19,cex=1.2,cex.lab=1.5,cex.main=1.5,
+     xlab="Index (Each Observation)",ylab="Pii",main="Leverage Values (Pii)")
+plot(1:n,cooki,type="p",pch=19,cex=1.2,cex.lab=1.5,cex.main=1.5,
+     xlab="Index (Each Observation)",ylab="Cook's Distance",main="Influence Values (Cook's Distance)")
+```
+
+There may be a leverage point (around the 105th-ish observation).
+
+However, there does not seem to be any influential points by comparing both the Cook’s distance and the leverage values.
+
+# Summary of Analysis
+
+Our Proposed MLR Model if we want to use Abdomen Cicumference and Weight to predict body fat %:
+
+$$BodyFat\%=(0.9001103)*AbdomenCirc.-(0.1231357)*Weight-42.2895456$$
+
+> Rule of Thumb formula
+
+ - To transform our model formula to rule of thumb we use the following steps.
+ - Change 42.2895456 to 42.
+ - Change 0.9001103 to 1. Since this is a multiplication, this leads to the result being scaled up by a multiple.
+ - To counter this we scale up 0.1231357 accordingly. 0.1231357 is apporx. 1/8. We scale this up to 1/6.
+ - I decided this by looking at mean and median of thumb vector, and graphing original, fitted and thumb rule values on the same graph to look at point deviance for different fractions ranging from 1/8 to 1/5.
+ - 1/6 yields the best results.
+ 
+
+$$BodyFat\% = AbdomenCirc.-(Weight/6)-42$$
+
+**Example:** A male individual that weight 160 lbs and has abdomen circumference 88 cm, yields a body fat % of about 19%.
+
+ > Inference about Relationship:
+ 
+There is clearly a linear relationship between age and body fat % and this relationship is significant at the 0.05 level (with p-value <2e-16). Abdomen and Weight explain about 72% of variation in body fat %. 
+
+Also, according to this model, a male is expected to gain about 0.90% in body fat for every every for 1 cm gain in abdomen circumference and loses about 0.12% in body fat for every 1 lb gain in weight. 
+
+ > Strengths and Weakness of Model:
+ 
+I think the MLR is a reasonable model between body fat % and weight and abdomen circumference, despite some weaknesses.   
+  
+(1) Linearity: Seems reasonable based on scattering of points across X in the residual plot. 
+
+(2) Multicollinearity may be violated as there is a collinear relationship between predictors, but this does not raise a large issue for our rule of thumb. 
+
+(3) Normally distributed errors: Seems plausible as most points are hugging the 45 degree line on the QQ plot diagnostic, but their might be some violation with the slight tailing effects at the ends of the graph. 
+  
+(4) Constant variance:  There is a slight fanning in pattern of points in the residual plot. 
+  
+(5) Abdomen and Weight explain about 72% of the variation in body fat % among men, which is a reasonably good amount for a simple model.  
+  
+(6) Final model has a higher F-statistic compared to other models considered. 
+
+Overall, our MLR model provides a simple, cost-effective way of predicting the body fat % using just weight and abdomen. Because we sacrifice other predictors of body fat for simplicity, we lose some of the accuracy in the prediction. In addition, when interpreting assumptions the MLR model, assumptions (linearity, homescedasticity and normality) seem plausible, but normality, homoscedasticity and multicollinearity may be slightly violated, but should not be an issue as our end goal is a simple rule of thumb. 
