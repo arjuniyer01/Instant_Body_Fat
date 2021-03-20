@@ -8,6 +8,6 @@ The goal of the project is to come up with a simple and accurate way of determin
 
 RULE OF THUMB:
 
-##BodyFat\% = AbdomenCirc.-(Weight/6)-42
+## BodyFat\% = AbdomenCirc.-(Weight/6)-42
 
 **Example:** A male individual that weight 160 lbs and has abdomen circumference 88 cm, yields a body fat % of about 19%.
