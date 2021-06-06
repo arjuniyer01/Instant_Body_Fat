@@ -1,1 +1,1 @@
-// Created for Github language recognition
+# Created for Github language recognition
